@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1v1 Шутер</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#1a1a2e;font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;overflow:hidden}
+#game-container{background:#16213e;border-radius:20px;padding:20px;position:relative}
+#game-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding:15px;background:#0f3460;border-radius:10px;gap:10px}
+#game-canvas{border:3px solid #0f3460;border-radius:10px;cursor:crosshair;display:block;background:#2c3e50}
+.stat{display:flex;align-items:center;gap:5px;font-weight:bold;color:#fff;background:#1a1a2e;padding:8px 12px;border-radius:5px}
+.btn{background:#e94560;color:#fff;border:none;padding:10px 20px;border-radius:5px;cursor:pointer;font-size:16px}
+.btn:hover{background:#c73550}
+#kill-feed{position:absolute;top:60px;right:20px;z-index:100;color:#fff;font-size:14px}
+.kill-entry{background:rgba(0,0,0,.7);padding:5px 10px;margin-bottom:5px;border-radius:3px;animation:fadeIn .3s}
+@keyframes fadeIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+</style>
+</head>
+<body>
+<div id="game-container">
+<div id="game-header">
+<div class="stat">🔴 Игрок 1: <span id="p1-kills">0</span></div>
+<div class="stat">🔵 Игрок 2: <span id="p2-kills">0</span></div>
+<button class="btn" onclick="resetGame()">🔄 Сброс</button>
+</div>
+<canvas id="game-canvas" width="800" height="500"></canvas>
+<div id="kill-feed"></div>
+</div>
+
+<script>
+const canvas=document.getElementById('game-canvas');
+const ctx=canvas.getContext('2d');
+
+// Игроки
+const player1={
+x:200,y:250,width:30,height:45,speed:5,color:'#e74c3c',
+hp:100,maxHp:100,kills:0,shooting:false,shootTimer:0,
+dir:1,bullets:[],name:'Игрок 1'
+};
+
+const player2={
+x:600,y:250,width:30,height:45,speed:5,color:'#3498db',
+hp:100,maxHp:100,kills:0,shooting:false,shootTimer:0,
+dir:-1,bullets:[],name:'Игрок 2'
+};
+
+const keys={};
+let particles=[];
+
+// Управление
+window.addEventListener('keydown',e=>{
+keys[e.key.toLowerCase()]=true;
+});
+window.addEventListener('keyup',e=>{
+keys[e.key.toLowerCase()]=false;
+});
+
+// Выстрел
+canvas.addEventListener('mousedown',e=>{
+const rect=canvas.getBoundingClientRect();
+const mx=e.clientX-rect.left;
+const my=e.clientY-rect.top;
+shoot(player1,mx,my);
+});
+
+canvas.addEventListener('contextmenu',e=>{
+e.preventDefault();
+const rect=canvas.getBoundingClientRect();
+const mx=e.clientX-rect.left;
+const my=e.clientY-rect.top;
+shoot(player2,mx,my);
+});
+
+function shoot(player,targetX,targetY){
+if(player.shootTimer>0)return;
+player.shootTimer=20;
+player.shooting=true;
+
+const dx=targetX-player.x;
+const dy=targetY-player.y;
+const dist=Math.sqrt(dx*dx+dy*dy);
+const speed=10;
+
+player.bullets.push({
+x:player.x+player.width/2,
+y:player.y+player.height/2,
+vx:(dx/dist)*speed,
+vy:(dy/dist)*speed,
+life:100
+});
+}
+
+// Препятствия
+const obstacles=[
+{x:350,y:200,width:100,height:20,color:'#8B4513'},
+{x:350,y:300,width:100,height:20,color:'#8B4513'},
+{x:400,y:150,width:20,height:100,color:'#8B4513'},
+{x:400,y:250,width:20,height:100,color:'#8B4513'}
+];
+
+function drawPlayer(player){
+ctx.save();
+// Тело
+ctx.fillStyle=player.color;
+ctx.fillRect(player.x,player.y,player.width,player.height);
+// Голова
+ctx.fillStyle='#FFD2A8';
+ctx.fillRect(player.x+5,player.y-15,20,15);
+// Глаза
+ctx.fillStyle='#000';
+ctx.fillRect(player.x+8,player.y-10,4,3);
+ctx.fillRect(player.x+18,player.y-10,4,3);
+// Оружие
+ctx.fillStyle='#555';
+ctx.fillRect(player.x+player.dir*25,player.y+15,20,5);
+// Полоска здоровья
+ctx.fillStyle='#000';
+ctx.fillRect(player.x-10,player.y-25,50,8);
+ctx.fillStyle=player.hp>50?'#2ecc71':player.hp>25?'#f39c12':'#e74c3c';
+ctx.fillRect(player.x-10,player.y-25,50*(player.hp/player.maxHp),8);
+// Имя
+ctx.fillStyle='#fff';
+ctx.font='12px Arial';
+ctx.textAlign='center';
+ctx.fillText(player.name,player.x+15,player.y-30);
+ctx.restore();
+}
+
+function drawObstacles(){
+obstacles.forEach(obs=>{
+ctx.fillStyle=obs.color;
+ctx.fillRect(obs.x,obs.y,obs.width,obs.height);
+ctx.strokeStyle='#5D2E0C';
+ctx.strokeRect(obs.x,obs.y,obs.width,obs.height);
+});
+}
+
+function movePlayer(player,leftKey,rightKey,upKey,downKey){
+if(keys[leftKey]||keys[rightKey]||keys[upKey]||keys[downKey]){
+if(keys[leftKey]){player.x-=player.speed;player.dir=-1}
+if(keys[rightKey]){player.x+=player.speed;player.dir=1}
+if(keys[upKey])player.y-=player.speed;
+if(keys[downKey])player.y+=player.speed;
+}
+
+// Границы
+player.x=Math.max(0,Math.min(canvas.width-player.width,player.x));
+player.y=Math.max(0,Math.min(canvas.height-player.height,player.y));
+
+// Столкновения с препятствиями
+obstacles.forEach(obs=>{
+if(player.x<obs.x+obs.width&&player.x+player.width>obs.x&&
+player.y<obs.y+obs.height&&player.y+player.height>obs.y){
+// Выталкиваем игрока
+const overlapX=Math.min(player.x+player.width-obs.x,obs.x+obs.width-player.x);
+const overlapY=Math.min(player.y+player.height-obs.y,obs.y+obs.height-player.y);
+if(overlapX<overlapY){
+if(player.x<obs.x)player.x=obs.x-player.width;
+else player.x=obs.x+obs.width;
+}else{
+if(player.y<obs.y)player.y=obs.y-player.height;
+else player.y=obs.y+obs.height;
+}
+}
+});
+}
+
+function updateBullets(){
+// Пули игрока 1
+player1.bullets.forEach((bullet,index)=>{
+bullet.x+=bullet.vx;
+bullet.y+=bullet.vy;
+bullet.life--;
+
+// Проверка попадания в игрока 2
+if(checkBulletHit(bullet,player2)){
+player2.hp-=10;
+createParticles(bullet.x,bullet.y,'#3498db');
+player1.bullets.splice(index,1);
+if(player2.hp<=0){
+player1.kills++;
+updateUI();
+addKillFeed(player1.name+' убил '+player2.name);
+respawnPlayer(player2);
+}
+return;
+}
+
+// Проверка попадания в препятствия
+obstacles.forEach(obs=>{
+if(bullet.x>=obs.x&&bullet.x<=obs.x+obs.width&&
+bullet.y>=obs.y&&bullet.y<=obs.y+obs.height){
+player1.bullets.splice(index,1);
+}
+});
+
+if(bullet.life<=0||bullet.x<0||bullet.x>canvas.width||bullet.y<0||bullet.y>canvas.height){
+player1.bullets.splice(index,1);
+}
+});
+
+// Пули игрока 2
+player2.bullets.forEach((bullet,index)=>{
+bullet.x+=bullet.vx;
+bullet.y+=bullet.vy;
+bullet.life--;
+
+if(checkBulletHit(bullet,player1)){
+player1.hp-=10;
+createParticles(bullet.x,bullet.y,'#e74c3c');
+player2.bullets.splice(index,1);
+if(player1.hp<=0){
+player2.kills++;
+updateUI();
+addKillFeed(player2.name+' убил '+player1.name);
+respawnPlayer(player1);
+}
+return;
+}
+
+obstacles.forEach(obs=>{
+if(bullet.x>=obs.x&&bullet.x<=obs.x+obs.width&&
+bullet.y>=obs.y&&bullet.y<=obs.y+obs.height){
+player2.bullets.splice(index,1);
+}
+});
+
+if(bullet.life<=0||bullet.x<0||bullet.x>canvas.width||bullet.y<0||bullet.y>canvas.height){
+player2.bullets.splice(index,1);
+}
+});
+}
+
+function checkBulletHit(bullet,player){
+return bullet.x>=player.x&&bullet.x<=player.x+player.width&&
+bullet.y>=player.y&&bullet.y<=player.y+player.height;
+}
+
+function respawnPlayer(player){
+player.hp=player.maxHp;
+player.x=Math.random()*(canvas.width-player.width);
+player.y=Math.random()*(canvas.height-player.height);
+player.bullets=[];
+}
+
+function createParticles(x,y,color){
+for(let i=0;i<10;i++){
+particles.push({
+x:x,y:y,
+vx:(Math.random()-.5)*8,
+vy:(Math.random()-.5)*8,
+life:20,color:color
+});
+}
+}
+
+function addKillFeed(text){
+const feed=document.getElementById('kill-feed');
+const entry=document.createElement('div');
+entry.className='kill-entry';
+entry.textContent=text;
+feed.appendChild(entry);
+setTimeout(()=>entry.remove(),3000);
+}
+
+function updateUI(){
+document.getElementById('p1-kills').textContent=player1.kills;
+document.getElementById('p2-kills').textContent=player2.kills;
+}
+
+function resetGame(){
+player1.hp=100;player1.kills=0;player1.x=200;player1.y=250;player1.bullets=[];
+player2.hp=100;player2.kills=0;player2.x=600;player2.y=250;player2.bullets=[];
+document.getElementById('kill-feed').innerHTML='';
+updateUI();
+}
+
+function update(){
+movePlayer(player1,'a','d','w','s');
+movePlayer(player2,'arrowleft','arrowright','arrowup','arrowdown');
+updateBullets();
+
+if(player1.shootTimer>0)player1.shootTimer--;
+if(player2.shootTimer>0)player2.shootTimer--;
+
+particles=particles.filter(p=>{
+p.x+=p.vx;
+p.y+=p.vy;
+p.life--;
+return p.life>0;
+});
+}
+
+function draw(){
+// Фон
+ctx.fillStyle='#2c3e50';
+ctx.fillRect(0,0,canvas.width,canvas.height);
+
+// Сетка
+ctx.strokeStyle='#34495e';
+ctx.lineWidth=1;
+for(let i=0;i<canvas.width;i+=50){
+ctx.beginPath();
+ctx.moveTo(i,0);
+ctx.lineTo(i,canvas.height);
+ctx.stroke();
+}
+for(let i=0;i<canvas.height;i+=50){
+ctx.beginPath();
+ctx.moveTo(0,i);
+ctx.lineTo(canvas.width,i);
+ctx.stroke();
+}
+
+drawObstacles();
+
+// Пули
+player1.bullets.forEach(bullet=>{
+ctx.fillStyle='#e74c3c';
+ctx.beginPath();
+ctx.arc(bullet.x,bullet.y,5,0,Math.PI*2);
+ctx.fill();
+});
+
+player2.bullets.forEach(bullet=>{
+ctx.fillStyle='#3498db';
+ctx.beginPath();
+ctx.arc(bullet.x,bullet.y,5,0,Math.PI*2);
+ctx.fill();
+});
+
+drawPlayer(player1);
+drawPlayer(player2);
+
+// Частицы
+particles.forEach(p=>{
+ctx.globalAlpha=p.life/20;
+ctx.fillStyle=p.color;
+ctx.fillRect(p.x,p.y,5,5);
+ctx.globalAlpha=1;
+});
+}
+
+function gameLoop(){
+update();
+draw();
+requestAnimationFrame(gameLoop);
+}
+
+updateUI();
+gameLoop();
+</script>
+</body>
+</html>
